@@ -9,60 +9,33 @@ live_design! {
     YELP_RED = #d32323
     STAR_YELLOW = #f8b84e
 
-    // Star Rating widget - draws filled/empty stars based on rating
+    // Star Rating widget - simple circles for now
     StarRating = {{StarRating}} {
         width: Fit
         height: 18.0
         show_bg: true
         draw_bg: {
             instance rating: 0.0
-            instance star_count: 5.0
 
             fn pixel(self) -> vec4 {
-                let star_width = self.rect_size.y;
-                let total_width = star_width * self.star_count;
+                let filled = vec4(0.973, 0.722, 0.306, 1.0);
+                let empty = vec4(0.878, 0.878, 0.878, 1.0);
 
-                // Which star are we in?
-                let star_index = floor(self.pos.x * self.star_count);
-                let local_x = fract(self.pos.x * self.star_count);
+                // 5 circles representing stars
+                let star_w = self.rect_size.y;
+                let idx = floor(self.pos.x * 5.0);
+                let lx = fract(self.pos.x * 5.0);
 
-                // Star shape using distance field
-                let center = vec2(0.5, 0.5);
-                let p = vec2(local_x, self.pos.y) - center;
+                // Circle shape
+                let c = vec2(0.5, 0.5);
+                let d = length(vec2(lx, self.pos.y) - c);
 
-                // 5-pointed star SDF
-                let angle = atan(p.y, p.x);
-                let r = length(p);
-                let n = 5.0;
-                let m = 0.5; // Inner radius ratio
-                let star_angle = 3.14159 / n;
-                let a = mod(angle + star_angle, 2.0 * star_angle) - star_angle;
-                let outer = 0.35;
-                let inner = outer * m;
-                let star_r = inner / cos(a);
+                // Outside circle
+                let alpha = 1.0 - smoothstep(0.3, 0.35, d);
+                let is_filled = step(idx + 0.5, self.rating);
+                let col = mix(empty, filled, is_filled);
 
-                let in_star = r < star_r + 0.05;
-
-                if !in_star {
-                    return vec4(0.0, 0.0, 0.0, 0.0);
-                }
-
-                // Filled or empty based on rating
-                let fill_threshold = self.rating - star_index;
-                if fill_threshold >= 1.0 {
-                    // Fully filled star
-                    return #f8b84e;
-                } else if fill_threshold > 0.0 {
-                    // Partially filled - use horizontal position
-                    if local_x < fill_threshold {
-                        return #f8b84e;
-                    } else {
-                        return #e0e0e0;
-                    }
-                } else {
-                    // Empty star
-                    return #e0e0e0;
-                }
+                return vec4(col.rgb, col.a * alpha);
             }
         }
     }
@@ -114,7 +87,8 @@ live_design! {
             color: #fff
             instance hover: 0.0
             fn pixel(self) -> vec4 {
-                return mix(self.color, #f5f5f5, self.hover * 0.5);
+                // More visible hover - darken to light gray
+                return mix(self.color, #e8e8e8, self.hover);
             }
         }
 
@@ -131,6 +105,8 @@ live_design! {
                 }
             }
         }
+
+        cursor: Hand
 
         photo = <RoundedView> {
             width: 80.0, height: 80.0
@@ -595,14 +571,22 @@ pub struct BusinessCard {
 
 impl Widget for BusinessCard {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Forward to view first so area is set up
+        self.view.handle_event(cx, event, scope);
+
+        // Handle animator
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
 
+        // Handle hits on our area
         match event.hits(cx, self.view.area()) {
-            Hit::FingerDown(_) => {
-                if let Some(ref business) = self.business {
-                    cx.action(BusinessCardAction::Clicked(business.clone()));
+            Hit::FingerUp(fe) => {
+                if fe.is_over {
+                    if let Some(ref business) = self.business {
+                        log!("BusinessCard clicked: {}", business.name);
+                        cx.action(BusinessCardAction::Clicked(business.clone()));
+                    }
                 }
             }
             Hit::FingerHoverIn(_) => {
@@ -615,7 +599,6 @@ impl Widget for BusinessCard {
             }
             _ => {}
         }
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -653,13 +636,20 @@ pub struct YelpTabBar {
 impl Widget for YelpTabBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
-        if self.view.button(ids!(search_tab)).clicked(&actions) && self.current_tab != Tab::Search {
-            self.current_tab = Tab::Search;
-            cx.action(YelpTabBarAction::TabChanged(Tab::Search));
+
+        if self.view.button(ids!(search_tab)).clicked(&actions) {
+            log!("Search tab clicked, current: {:?}", self.current_tab);
+            if self.current_tab != Tab::Search {
+                self.current_tab = Tab::Search;
+                cx.action(YelpTabBarAction::TabChanged(Tab::Search));
+            }
         }
-        if self.view.button(ids!(map_tab)).clicked(&actions) && self.current_tab != Tab::Map {
-            self.current_tab = Tab::Map;
-            cx.action(YelpTabBarAction::TabChanged(Tab::Map));
+        if self.view.button(ids!(map_tab)).clicked(&actions) {
+            log!("Map tab clicked, current: {:?}", self.current_tab);
+            if self.current_tab != Tab::Map {
+                self.current_tab = Tab::Map;
+                cx.action(YelpTabBarAction::TabChanged(Tab::Map));
+            }
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -841,16 +831,19 @@ impl MatchEvent for App {
         for action in actions.iter() {
             // Handle tab changes
             if let Some(YelpTabBarAction::TabChanged(tab)) = action.downcast_ref() {
+                log!("App received TabChanged: {:?}", tab);
                 self.switch_tab(cx, *tab);
             }
 
             // Handle business card clicks
             if let Some(BusinessCardAction::Clicked(business)) = action.downcast_ref() {
+                log!("App received BusinessCardClicked: {}", business.name);
                 self.show_detail(cx, business);
             }
 
             // Handle back from detail
             if let Some(DetailScreenAction::Back) = action.downcast_ref() {
+                log!("App received Back action");
                 self.hide_detail(cx);
             }
         }
@@ -859,8 +852,16 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // Capture actions generated by UI event handling
+        let actions = cx.capture_actions(|cx| {
+            self.ui.handle_event(cx, event, &mut Scope::empty());
+        });
+
+        // Handle the captured actions
+        self.handle_actions(cx, &actions);
+
+        // Also handle system events like Startup
         self.match_event(cx, event);
-        self.ui.handle_event(cx, event, &mut Scope::empty());
     }
 }
 
