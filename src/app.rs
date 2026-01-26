@@ -9,7 +9,7 @@ live_design! {
     YELP_RED = #d32323
     STAR_YELLOW = #f8b84e
 
-    // Star Rating widget - actual star shapes
+    // Star Rating widget - proper 5-pointed stars
     StarRating = {{StarRating}} {
         width: Fit
         height: 20.0
@@ -25,16 +25,29 @@ live_design! {
                 let star_idx = floor(self.pos.x * 5.0);
                 let local_x = fract(self.pos.x * 5.0);
 
-                // Star shape using SDF
-                let p = vec2(local_x - 0.5, self.pos.y - 0.5) * 2.0;
+                // Center point in local star space
+                let cx = local_x - 0.5;
+                let cy = self.pos.y - 0.5;
 
-                // 5-pointed star formula
-                let angle = atan(p.y, p.x);
-                let r = length(p);
-                let n = 5.0;
-                let star_r = cos(3.14159 / n) / cos(mod(angle, 2.0 * 3.14159 / n) - 3.14159 / n);
+                // Convert to polar coordinates
+                let angle = atan(cy, cx);
+                let r = length(vec2(cx, cy));
 
-                let inside = step(r, star_r * 0.85);
+                // 5-pointed star: alternating outer and inner radius
+                let pi = 3.14159265;
+                let points = 5.0;
+                let outer_r = 0.45;
+                let inner_r = 0.18;
+
+                // Calculate which segment we're in
+                let segment_angle = pi / points;
+                let a = mod(angle + pi + segment_angle / 2.0, 2.0 * segment_angle) - segment_angle;
+
+                // Interpolate between outer and inner radius
+                let t = abs(a) / segment_angle;
+                let star_radius = mix(outer_r, inner_r, t);
+
+                let inside = step(r, star_radius);
                 let is_filled = step(star_idx + 0.5, self.rating);
                 let col = mix(empty, filled, is_filled);
 
@@ -228,7 +241,7 @@ live_design! {
             width: Fill, height: Fill
             flow: Down
             align: { x: 0.5, y: 0.5 }
-            spacing: 2.0
+            spacing: 4.0
             cursor: Hand
 
             search_icon = <View> {
@@ -237,15 +250,27 @@ live_design! {
                 draw_bg: {
                     instance color: (YELP_RED)
                     fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let c = self.rect_size * 0.5;
-                        // Search magnifying glass
-                        sdf.circle(c.x - 2.0, c.y - 2.0, 7.0);
-                        sdf.stroke(self.color, 2.0);
-                        sdf.move_to(c.x + 3.0, c.y + 3.0);
-                        sdf.line_to(c.x + 9.0, c.y + 9.0);
-                        sdf.stroke(self.color, 2.5);
-                        return sdf.result;
+                        // Normalized coordinates (0-1)
+                        let p = self.pos;
+                        let c = vec2(0.4, 0.4);  // Circle center
+                        let r = 0.25;            // Circle radius
+
+                        // Distance to circle edge (magnifying glass circle)
+                        let d_circle = abs(length(p - c) - r);
+                        let circle_ring = 1.0 - smoothstep(0.0, 0.08, d_circle);
+
+                        // Handle line from circle to bottom-right
+                        let h_start = c + vec2(0.18, 0.18);
+                        let h_end = vec2(0.85, 0.85);
+                        let h_dir = normalize(h_end - h_start);
+                        let h_len = length(h_end - h_start);
+                        let h_proj = clamp(dot(p - h_start, h_dir), 0.0, h_len);
+                        let h_closest = h_start + h_dir * h_proj;
+                        let d_handle = length(p - h_closest);
+                        let handle_line = 1.0 - smoothstep(0.0, 0.06, d_handle);
+
+                        let alpha = max(circle_ring, handle_line);
+                        return vec4(self.color.rgb, alpha);
                     }
                 }
             }
@@ -260,7 +285,7 @@ live_design! {
             width: Fill, height: Fill
             flow: Down
             align: { x: 0.5, y: 0.5 }
-            spacing: 2.0
+            spacing: 4.0
             cursor: Hand
 
             map_icon = <View> {
@@ -269,18 +294,28 @@ live_design! {
                 draw_bg: {
                     instance color: #999
                     fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let c = self.rect_size * 0.5;
-                        // Map/location pin
-                        sdf.circle(c.x, c.y - 3.0, 5.0);
-                        sdf.stroke(self.color, 1.5);
-                        sdf.circle(c.x, c.y - 3.0, 2.0);
-                        sdf.fill(self.color);
-                        // Pin point
-                        sdf.move_to(c.x, c.y + 2.0);
-                        sdf.line_to(c.x, c.y + 9.0);
-                        sdf.stroke(self.color, 1.5);
-                        return sdf.result;
+                        // Normalized coordinates (0-1)
+                        let p = self.pos;
+                        let c = vec2(0.5, 0.35);  // Pin head center
+
+                        // Pin head (filled circle)
+                        let d_head = length(p - c);
+                        let head_fill = 1.0 - smoothstep(0.18, 0.22, d_head);
+
+                        // Inner dot (hole in pin)
+                        let inner_hole = smoothstep(0.06, 0.08, d_head);
+
+                        // Pin point (triangle pointing down)
+                        let pin_top = 0.5;
+                        let pin_bottom = 0.9;
+                        let pin_width = 0.12;
+                        let t = (p.y - pin_top) / (pin_bottom - pin_top);
+                        let half_w = pin_width * (1.0 - t);
+                        let in_pin = step(pin_top, p.y) * step(p.y, pin_bottom) *
+                                     step(0.5 - half_w, p.x) * step(p.x, 0.5 + half_w);
+
+                        let alpha = max(head_fill * inner_hole, in_pin);
+                        return vec4(self.color.rgb, alpha);
                     }
                 }
             }
@@ -447,7 +482,7 @@ live_design! {
                         text: "Call"
                         draw_bg: {
                             color: (YELP_RED)
-                            border_radius: 4.0
+                            border_radius: 22.0
                         }
                         draw_text: {
                             color: #fff
@@ -460,7 +495,7 @@ live_design! {
                         text: "Directions"
                         draw_bg: {
                             color: #f5f5f5
-                            border_radius: 4.0
+                            border_radius: 22.0
                         }
                         draw_text: {
                             color: #333
