@@ -78,20 +78,19 @@ live_design! {
         }
     }
 
-    // Business Card widget with hover animation
+    // Business Card widget with Yelp-style layout
     BusinessCard = {{BusinessCard}} {
         width: Fill
         height: Fit
-        padding: 16.0
+        padding: { top: 16.0, bottom: 16.0, left: 16.0, right: 16.0 }
         flow: Right
-        spacing: 12.0
+        spacing: 16.0
         show_bg: true
         draw_bg: {
             color: #fff
             instance hover: 0.0
             fn pixel(self) -> vec4 {
-                // More visible hover - darken to light gray
-                return mix(self.color, #e8e8e8, self.hover);
+                return mix(self.color, #f5f5f5, self.hover);
             }
         }
 
@@ -111,10 +110,11 @@ live_design! {
 
         cursor: Hand
 
+        // Larger square photo
         photo = <RoundedView> {
-            width: 80.0, height: 80.0
+            width: 110.0, height: 110.0
             show_bg: true
-            draw_bg: { color: #e0e0e0, border_radius: 4.0 }
+            draw_bg: { color: #c0c0c0, border_radius: 8.0 }
         }
 
         info = <View> {
@@ -122,12 +122,31 @@ live_design! {
             flow: Down
             spacing: 4.0
 
-            name_label = <Label> {
+            // Top row: name + distance
+            name_row = <View> {
                 width: Fill, height: Fit
-                draw_text: { text_style: { font_size: 16.0 }, color: #1a1a1a }
-                text: "Business Name"
+                flow: Right
+                align: { y: 0.5 }
+
+                name_label = <Label> {
+                    width: Fill, height: Fit
+                    draw_text: {
+                        text_style: { font_size: 17.0 }
+                        color: #1a1a1a
+                    }
+                    text: "Business Name"
+                }
+                distance_label = <Label> {
+                    width: Fit, height: Fit
+                    draw_text: {
+                        text_style: { font_size: 13.0 }
+                        color: #666
+                    }
+                    text: "2.5 mi"
+                }
             }
 
+            // Rating row: stars + numeric + reviews
             rating_row = <View> {
                 width: Fit, height: Fit
                 flow: Right
@@ -135,24 +154,56 @@ live_design! {
                 align: { y: 0.5 }
 
                 stars = <StarRating> {
-                    width: 90.0, height: 18.0
+                    width: 100.0, height: 20.0
+                }
+                rating_num = <Label> {
+                    width: Fit, height: Fit
+                    draw_text: { text_style: { font_size: 14.0 }, color: #1a1a1a }
+                    text: "4.2"
                 }
                 review_count = <Label> {
                     width: Fit, height: Fit
-                    draw_text: { text_style: { font_size: 13.0 }, color: #666 }
-                    text: "(100)"
+                    draw_text: { text_style: { font_size: 14.0 }, color: #666 }
+                    text: "(249 reviews)"
                 }
             }
 
+            // Meta row: location · price · status
             meta_label = <Label> {
                 width: Fill, height: Fit
                 draw_text: { text_style: { font_size: 13.0 }, color: #666 }
-                text: "$$$ - Italian - 0.5 mi"
+                text: "Milpitas · $$$ · Closed until 11:00 AM"
             }
-            location_label = <Label> {
+
+            // Category tags
+            tags_row = <View> {
                 width: Fill, height: Fit
-                draw_text: { text_style: { font_size: 13.0 }, color: #999 }
-                text: "San Francisco"
+                flow: Right
+                spacing: 8.0
+                margin: { top: 8.0 }
+
+                tag1 = <RoundedView> {
+                    width: Fit, height: Fit
+                    padding: { top: 6.0, bottom: 6.0, left: 12.0, right: 12.0 }
+                    show_bg: true
+                    draw_bg: {
+                        color: #fff
+                        instance border_color: #e0e0e0
+                        instance radius: 16.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.radius);
+                            sdf.fill_keep(self.color);
+                            sdf.stroke(self.border_color, 1.0);
+                            return sdf.result;
+                        }
+                    }
+                    tag1_label = <Label> {
+                        width: Fit, height: Fit
+                        draw_text: { text_style: { font_size: 12.0 }, color: #1a1a1a }
+                        text: "Italian"
+                    }
+                }
             }
         }
     }
@@ -517,6 +568,15 @@ impl Business {
             self.city.clone()
         }
     }
+
+    pub fn meta_line(&self) -> String {
+        let mut parts = Vec::new();
+        parts.push(self.city.clone());
+        if let Some(ref price) = self.price {
+            parts.push(price.clone());
+        }
+        parts.join(" · ")
+    }
 }
 
 pub fn mock_businesses() -> Vec<Business> {
@@ -643,9 +703,15 @@ impl Widget for BusinessCard {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(ref business) = self.business {
             self.view.label(ids!(name_label)).set_text(cx, &business.name);
-            self.view.label(ids!(review_count)).set_text(cx, &format!("({})", business.review_count));
-            self.view.label(ids!(meta_label)).set_text(cx, &business.price_and_categories());
-            self.view.label(ids!(location_label)).set_text(cx, &business.city);
+            self.view.label(ids!(distance_label)).set_text(cx, &format!("{:.1} mi", business.distance_meters.unwrap_or(0.0) / 1609.34));
+            self.view.label(ids!(rating_num)).set_text(cx, &format!("{:.1}", business.rating));
+            self.view.label(ids!(review_count)).set_text(cx, &format!("({} reviews)", business.review_count));
+            self.view.label(ids!(meta_label)).set_text(cx, &business.meta_line());
+
+            // Set first category tag
+            if !business.categories.is_empty() {
+                self.view.label(ids!(tag1_label)).set_text(cx, &business.categories[0]);
+            }
 
             // Set star rating
             self.view.star_rating(ids!(stars)).set_rating(cx, business.rating);
