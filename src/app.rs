@@ -208,10 +208,10 @@ live_design! {
         }
     }
 
-    // Tab Bar widget
+    // Tab Bar widget with icons
     YelpTabBar = {{YelpTabBar}} {
         width: Fill
-        height: 60.0
+        height: 56.0
         show_bg: true
         draw_bg: {
             color: #fff
@@ -222,50 +222,72 @@ live_design! {
             }
         }
         flow: Right
-        padding: { bottom: 8.0 }
+        padding: { top: 6.0, bottom: 6.0 }
 
-        search_tab = <Button> {
+        search_tab = <View> {
             width: Fill, height: Fill
-            text: "Search"
-            animator: {}
-            draw_text: {
-                fn get_color(self) -> vec4 {
-                    return self.color;
+            flow: Down
+            align: { x: 0.5, y: 0.5 }
+            spacing: 2.0
+            cursor: Hand
+
+            search_icon = <View> {
+                width: 24.0, height: 24.0
+                show_bg: true
+                draw_bg: {
+                    instance color: (YELP_RED)
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        // Search magnifying glass
+                        sdf.circle(c.x - 2.0, c.y - 2.0, 7.0);
+                        sdf.stroke(self.color, 2.0);
+                        sdf.move_to(c.x + 3.0, c.y + 3.0);
+                        sdf.line_to(c.x + 9.0, c.y + 9.0);
+                        sdf.stroke(self.color, 2.5);
+                        return sdf.result;
+                    }
                 }
-                color: #fff
-                text_style: { font_size: 12.0 }
             }
-            draw_bg: {
-                instance color: (YELP_RED)
-                instance radius: 4.0
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
-                    sdf.fill(self.color);
-                    return sdf.result;
-                }
+            search_label = <Label> {
+                width: Fit, height: Fit
+                draw_text: { text_style: { font_size: 10.0 }, color: (YELP_RED) }
+                text: "Search"
             }
         }
-        map_tab = <Button> {
+
+        map_tab = <View> {
             width: Fill, height: Fill
-            text: "Map"
-            animator: {}
-            draw_text: {
-                fn get_color(self) -> vec4 {
-                    return self.color;
+            flow: Down
+            align: { x: 0.5, y: 0.5 }
+            spacing: 2.0
+            cursor: Hand
+
+            map_icon = <View> {
+                width: 24.0, height: 24.0
+                show_bg: true
+                draw_bg: {
+                    instance color: #999
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        // Map/location pin
+                        sdf.circle(c.x, c.y - 3.0, 5.0);
+                        sdf.stroke(self.color, 1.5);
+                        sdf.circle(c.x, c.y - 3.0, 2.0);
+                        sdf.fill(self.color);
+                        // Pin point
+                        sdf.move_to(c.x, c.y + 2.0);
+                        sdf.line_to(c.x, c.y + 9.0);
+                        sdf.stroke(self.color, 1.5);
+                        return sdf.result;
+                    }
                 }
-                color: #999
-                text_style: { font_size: 12.0 }
             }
-            draw_bg: {
-                instance color: #0000
-                instance radius: 4.0
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
-                    sdf.fill(self.color);
-                    return sdf.result;
-                }
+            map_label = <Label> {
+                width: Fit, height: Fit
+                draw_text: { text_style: { font_size: 10.0 }, color: #999 }
+                text: "Map"
             }
         }
     }
@@ -742,30 +764,39 @@ pub struct YelpTabBar {
 impl Widget for YelpTabBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if !self.visible { return; }
-        let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
+        self.view.handle_event(cx, event, scope);
 
-        if self.view.button(ids!(search_tab)).clicked(&actions) {
-            log!("Search tab clicked, current: {:?}", self.current_tab);
-            if self.current_tab != Tab::Search {
-                self.current_tab = Tab::Search;
-                self.update_tab_colors(cx);
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    YelpTabBarAction::TabChanged(Tab::Search),
-                );
+        // Check hits on search tab area
+        let search_area = self.view.view(ids!(search_tab)).area();
+        if let Hit::FingerUp(fe) = event.hits(cx, search_area) {
+            if fe.is_over {
+                log!("Search tab clicked, current: {:?}", self.current_tab);
+                if self.current_tab != Tab::Search {
+                    self.current_tab = Tab::Search;
+                    self.update_tab_colors(cx);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        YelpTabBarAction::TabChanged(Tab::Search),
+                    );
+                }
             }
         }
-        if self.view.button(ids!(map_tab)).clicked(&actions) {
-            log!("Map tab clicked, current: {:?}", self.current_tab);
-            if self.current_tab != Tab::Map {
-                self.current_tab = Tab::Map;
-                self.update_tab_colors(cx);
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    YelpTabBarAction::TabChanged(Tab::Map),
-                );
+
+        // Check hits on map tab area
+        let map_area = self.view.view(ids!(map_tab)).area();
+        if let Hit::FingerUp(fe) = event.hits(cx, map_area) {
+            if fe.is_over {
+                log!("Map tab clicked, current: {:?}", self.current_tab);
+                if self.current_tab != Tab::Map {
+                    self.current_tab = Tab::Map;
+                    self.update_tab_colors(cx);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        YelpTabBarAction::TabChanged(Tab::Map),
+                    );
+                }
             }
         }
     }
@@ -778,23 +809,29 @@ impl Widget for YelpTabBar {
 impl YelpTabBar {
     fn update_tab_colors(&mut self, cx: &mut Cx) {
         let yelp_red = vec4(0.827, 0.137, 0.137, 1.0);
-        let white = vec4(1.0, 1.0, 1.0, 1.0);
         let gray = vec4(0.6, 0.6, 0.6, 1.0);
-        let transparent = vec4(0.0, 0.0, 0.0, 0.0);
 
-        let (search_text, search_bg, map_text, map_bg) = match self.current_tab {
-            Tab::Search => (white, yelp_red, gray, transparent),
-            Tab::Map => (gray, transparent, white, yelp_red),
+        let (search_color, map_color) = match self.current_tab {
+            Tab::Search => (yelp_red, gray),
+            Tab::Map => (gray, yelp_red),
         };
 
-        self.view.button(ids!(search_tab)).apply_over(cx, live! {
-            draw_text: { color: (search_text) }
-            draw_bg: { color: (search_bg) }
+        // Update search tab
+        self.view.view(ids!(search_icon)).apply_over(cx, live! {
+            draw_bg: { color: (search_color) }
         });
-        self.view.button(ids!(map_tab)).apply_over(cx, live! {
-            draw_text: { color: (map_text) }
-            draw_bg: { color: (map_bg) }
+        self.view.label(ids!(search_label)).apply_over(cx, live! {
+            draw_text: { color: (search_color) }
         });
+
+        // Update map tab
+        self.view.view(ids!(map_icon)).apply_over(cx, live! {
+            draw_bg: { color: (map_color) }
+        });
+        self.view.label(ids!(map_label)).apply_over(cx, live! {
+            draw_text: { color: (map_color) }
+        });
+
         self.redraw(cx);
     }
 }
