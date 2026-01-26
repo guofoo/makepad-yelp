@@ -9,33 +9,36 @@ live_design! {
     YELP_RED = #d32323
     STAR_YELLOW = #f8b84e
 
-    // Star Rating widget - simple circles for now
+    // Star Rating widget - actual star shapes
     StarRating = {{StarRating}} {
         width: Fit
-        height: 18.0
+        height: 20.0
         show_bg: true
         draw_bg: {
             instance rating: 0.0
 
             fn pixel(self) -> vec4 {
-                let filled = vec4(0.973, 0.722, 0.306, 1.0);
-                let empty = vec4(0.878, 0.878, 0.878, 1.0);
+                let filled = vec4(0.957, 0.224, 0.224, 1.0);  // #f43939
+                let empty = vec4(0.878, 0.878, 0.878, 1.0);   // #e0e0e0
 
-                // 5 circles representing stars
-                let star_w = self.rect_size.y;
-                let idx = floor(self.pos.x * 5.0);
-                let lx = fract(self.pos.x * 5.0);
+                // Each star takes 1/5 of width
+                let star_idx = floor(self.pos.x * 5.0);
+                let local_x = fract(self.pos.x * 5.0);
 
-                // Circle shape
-                let c = vec2(0.5, 0.5);
-                let d = length(vec2(lx, self.pos.y) - c);
+                // Star shape using SDF
+                let p = vec2(local_x - 0.5, self.pos.y - 0.5) * 2.0;
 
-                // Outside circle
-                let alpha = 1.0 - smoothstep(0.3, 0.35, d);
-                let is_filled = step(idx + 0.5, self.rating);
+                // 5-pointed star formula
+                let angle = atan(p.y, p.x);
+                let r = length(p);
+                let n = 5.0;
+                let star_r = cos(3.14159 / n) / cos(mod(angle, 2.0 * 3.14159 / n) - 3.14159 / n);
+
+                let inside = step(r, star_r * 0.85);
+                let is_filled = step(star_idx + 0.5, self.rating);
                 let col = mix(empty, filled, is_filled);
 
-                return vec4(col.rgb, col.a * alpha);
+                return vec4(col.rgb, col.a * inside);
             }
         }
     }
@@ -173,14 +176,46 @@ live_design! {
         search_tab = <Button> {
             width: Fill, height: Fill
             text: "Search"
-            draw_text: { color: (YELP_RED), text_style: { font_size: 12.0 } }
-            draw_bg: { color: #0000 }
+            animator: {}
+            draw_text: {
+                fn get_color(self) -> vec4 {
+                    return self.color;
+                }
+                color: #fff
+                text_style: { font_size: 12.0 }
+            }
+            draw_bg: {
+                instance color: (YELP_RED)
+                instance radius: 4.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                    sdf.fill(self.color);
+                    return sdf.result;
+                }
+            }
         }
         map_tab = <Button> {
             width: Fill, height: Fill
             text: "Map"
-            draw_text: { color: #999, text_style: { font_size: 12.0 } }
-            draw_bg: { color: #0000 }
+            animator: {}
+            draw_text: {
+                fn get_color(self) -> vec4 {
+                    return self.color;
+                }
+                color: #999
+                text_style: { font_size: 12.0 }
+            }
+            draw_bg: {
+                instance color: #0000
+                instance radius: 4.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                    sdf.fill(self.color);
+                    return sdf.result;
+                }
+            }
         }
     }
 
@@ -585,7 +620,11 @@ impl Widget for BusinessCard {
                 if fe.is_over {
                     if let Some(ref business) = self.business {
                         log!("BusinessCard clicked: {}", business.name);
-                        cx.action(BusinessCardAction::Clicked(business.clone()));
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            BusinessCardAction::Clicked(business.clone()),
+                        );
                     }
                 }
             }
@@ -630,30 +669,76 @@ pub enum BusinessCardAction {
 #[derive(Live, LiveHook, Widget)]
 pub struct YelpTabBar {
     #[deref] view: View,
+    #[live(true)] visible: bool,
     #[rust] current_tab: Tab,
 }
 
 impl Widget for YelpTabBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if !self.visible { return; }
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
 
         if self.view.button(ids!(search_tab)).clicked(&actions) {
             log!("Search tab clicked, current: {:?}", self.current_tab);
             if self.current_tab != Tab::Search {
                 self.current_tab = Tab::Search;
-                cx.action(YelpTabBarAction::TabChanged(Tab::Search));
+                self.update_tab_colors(cx);
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    YelpTabBarAction::TabChanged(Tab::Search),
+                );
             }
         }
         if self.view.button(ids!(map_tab)).clicked(&actions) {
             log!("Map tab clicked, current: {:?}", self.current_tab);
             if self.current_tab != Tab::Map {
                 self.current_tab = Tab::Map;
-                cx.action(YelpTabBarAction::TabChanged(Tab::Map));
+                self.update_tab_colors(cx);
+                cx.widget_action(
+                    self.widget_uid(),
+                    &scope.path,
+                    YelpTabBarAction::TabChanged(Tab::Map),
+                );
             }
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.visible { return DrawStep::done(); }
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl YelpTabBar {
+    fn update_tab_colors(&mut self, cx: &mut Cx) {
+        let yelp_red = vec4(0.827, 0.137, 0.137, 1.0);
+        let white = vec4(1.0, 1.0, 1.0, 1.0);
+        let gray = vec4(0.6, 0.6, 0.6, 1.0);
+        let transparent = vec4(0.0, 0.0, 0.0, 0.0);
+
+        let (search_text, search_bg, map_text, map_bg) = match self.current_tab {
+            Tab::Search => (white, yelp_red, gray, transparent),
+            Tab::Map => (gray, transparent, white, yelp_red),
+        };
+
+        self.view.button(ids!(search_tab)).apply_over(cx, live! {
+            draw_text: { color: (search_text) }
+            draw_bg: { color: (search_bg) }
+        });
+        self.view.button(ids!(map_tab)).apply_over(cx, live! {
+            draw_text: { color: (map_text) }
+            draw_bg: { color: (map_bg) }
+        });
+        self.redraw(cx);
+    }
+}
+
+impl YelpTabBarRef {
+    pub fn set_visible(&self, cx: &mut Cx, visible: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible = visible;
+            inner.redraw(cx);
+        }
     }
 }
 
@@ -666,14 +751,17 @@ pub enum YelpTabBarAction {
 #[derive(Live, LiveHook, Widget)]
 pub struct SearchScreen {
     #[deref] view: View,
+    #[live(true)] visible: bool,
     #[rust] businesses: Vec<Business>,
 }
 
 impl Widget for SearchScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if !self.visible { return; }
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.visible { return DrawStep::done(); }
         if self.businesses.is_empty() {
             self.businesses = mock_businesses();
         }
@@ -695,14 +783,25 @@ impl Widget for SearchScreen {
     }
 }
 
+impl SearchScreenRef {
+    pub fn set_visible(&self, cx: &mut Cx, visible: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible = visible;
+            inner.redraw(cx);
+        }
+    }
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct MapScreen {
     #[deref] view: View,
+    #[live] visible: bool,
     #[rust] markers_added: bool,
 }
 
 impl Widget for MapScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if !self.visible { return; }
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
 
         // Handle marker taps
@@ -714,7 +813,11 @@ impl Widget for MapScreen {
             for business in businesses {
                 let business_live_id = LiveId::from_str(&business.id);
                 if marker_id == business_live_id {
-                    cx.action(BusinessCardAction::Clicked(business));
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        BusinessCardAction::Clicked(business),
+                    );
                     break;
                 }
             }
@@ -722,6 +825,7 @@ impl Widget for MapScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.visible { return DrawStep::done(); }
         // Add markers on first draw
         if !self.markers_added {
             self.markers_added = true;
@@ -745,22 +849,38 @@ impl Widget for MapScreen {
     }
 }
 
+impl MapScreenRef {
+    pub fn set_visible(&self, cx: &mut Cx, visible: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible = visible;
+            inner.redraw(cx);
+        }
+    }
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct BusinessDetailScreen {
     #[deref] view: View,
+    #[live] visible: bool,
     #[rust] business: Option<Business>,
 }
 
 impl Widget for BusinessDetailScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if !self.visible { return; }
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
 
         if self.view.button(ids!(back_button)).clicked(&actions) {
-            cx.action(DetailScreenAction::Back);
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                DetailScreenAction::Back,
+            );
         }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.visible { return DrawStep::done(); }
         if let Some(ref business) = self.business {
             // Header title
             self.view.label(ids!(title)).set_text(cx, &business.name);
@@ -790,6 +910,13 @@ impl BusinessDetailScreenRef {
     pub fn set_business(&self, cx: &mut Cx, business: &Business) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_business(business);
+            inner.redraw(cx);
+        }
+    }
+
+    pub fn set_visible(&self, cx: &mut Cx, visible: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible = visible;
             inner.redraw(cx);
         }
     }
@@ -829,22 +956,25 @@ impl LiveRegister for App {
 impl MatchEvent for App {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions.iter() {
-            // Handle tab changes
-            if let Some(YelpTabBarAction::TabChanged(tab)) = action.downcast_ref() {
+            // Handle tab changes (widget action pattern)
+            if let YelpTabBarAction::TabChanged(tab) = action.as_widget_action().cast() {
                 log!("App received TabChanged: {:?}", tab);
-                self.switch_tab(cx, *tab);
+                self.switch_tab(cx, &tab);
+                continue;
             }
 
-            // Handle business card clicks
-            if let Some(BusinessCardAction::Clicked(business)) = action.downcast_ref() {
+            // Handle business card clicks (widget action pattern)
+            if let BusinessCardAction::Clicked(business) = action.as_widget_action().cast() {
                 log!("App received BusinessCardClicked: {}", business.name);
-                self.show_detail(cx, business);
+                self.show_detail(cx, &business);
+                continue;
             }
 
-            // Handle back from detail
-            if let Some(DetailScreenAction::Back) = action.downcast_ref() {
+            // Handle back from detail (widget action pattern)
+            if let DetailScreenAction::Back = action.as_widget_action().cast() {
                 log!("App received Back action");
                 self.hide_detail(cx);
+                continue;
             }
         }
     }
@@ -866,14 +996,14 @@ impl AppMain for App {
 }
 
 impl App {
-    fn switch_tab(&mut self, cx: &mut Cx, tab: Tab) {
+    fn switch_tab(&mut self, cx: &mut Cx, tab: &Tab) {
         if self.showing_detail {
             self.hide_detail(cx);
         }
-        if self.current_tab == tab { return; }
-        self.current_tab = tab;
-        self.ui.view(ids!(search_screen)).set_visible(cx, tab == Tab::Search);
-        self.ui.view(ids!(map_screen)).set_visible(cx, tab == Tab::Map);
+        if self.current_tab == *tab { return; }
+        self.current_tab = *tab;
+        self.ui.search_screen(ids!(search_screen)).set_visible(cx, *tab == Tab::Search);
+        self.ui.map_screen(ids!(map_screen)).set_visible(cx, *tab == Tab::Map);
         self.ui.redraw(cx);
     }
 
@@ -884,10 +1014,10 @@ impl App {
         self.ui.business_detail_screen(ids!(detail_screen)).set_business(cx, business);
 
         // Show detail screen, hide others
-        self.ui.view(ids!(search_screen)).set_visible(cx, false);
-        self.ui.view(ids!(map_screen)).set_visible(cx, false);
-        self.ui.view(ids!(detail_screen)).set_visible(cx, true);
-        self.ui.view(ids!(tab_bar)).set_visible(cx, false);
+        self.ui.search_screen(ids!(search_screen)).set_visible(cx, false);
+        self.ui.map_screen(ids!(map_screen)).set_visible(cx, false);
+        self.ui.business_detail_screen(ids!(detail_screen)).set_visible(cx, true);
+        self.ui.yelp_tab_bar(ids!(tab_bar)).set_visible(cx, false);
         self.ui.redraw(cx);
     }
 
@@ -895,10 +1025,10 @@ impl App {
         self.showing_detail = false;
 
         // Restore previous tab
-        self.ui.view(ids!(detail_screen)).set_visible(cx, false);
-        self.ui.view(ids!(search_screen)).set_visible(cx, self.current_tab == Tab::Search);
-        self.ui.view(ids!(map_screen)).set_visible(cx, self.current_tab == Tab::Map);
-        self.ui.view(ids!(tab_bar)).set_visible(cx, true);
+        self.ui.business_detail_screen(ids!(detail_screen)).set_visible(cx, false);
+        self.ui.search_screen(ids!(search_screen)).set_visible(cx, self.current_tab == Tab::Search);
+        self.ui.map_screen(ids!(map_screen)).set_visible(cx, self.current_tab == Tab::Map);
+        self.ui.yelp_tab_bar(ids!(tab_bar)).set_visible(cx, true);
         self.ui.redraw(cx);
     }
 }
