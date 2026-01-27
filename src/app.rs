@@ -247,12 +247,12 @@ live_design! {
             cursor: Hand
             show_bg: true
             draw_bg: {
-                instance color: (YELP_RED)
+                instance bg_color: (YELP_RED)
                 instance radius: 22.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
-                    sdf.fill(self.color);
+                    sdf.fill(self.bg_color);
                     return sdf.result;
                 }
             }
@@ -261,16 +261,16 @@ live_design! {
                 width: 20.0, height: 20.0
                 show_bg: true
                 draw_bg: {
-                    instance color: #fff
+                    instance icon_color: #fff
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         // Magnifying glass circle
                         sdf.circle(8.0, 8.0, 5.0);
-                        sdf.stroke(self.color, 1.8);
+                        sdf.stroke(self.icon_color, 1.8);
                         // Handle
                         sdf.move_to(12.0, 12.0);
                         sdf.line_to(17.0, 17.0);
-                        sdf.stroke(self.color, 2.0);
+                        sdf.stroke(self.icon_color, 2.0);
                         return sdf.result;
                     }
                 }
@@ -291,12 +291,12 @@ live_design! {
             cursor: Hand
             show_bg: true
             draw_bg: {
-                instance color: #0000
+                instance bg_color: #0000
                 instance radius: 22.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
-                    sdf.fill(self.color);
+                    sdf.fill(self.bg_color);
                     return sdf.result;
                 }
             }
@@ -305,12 +305,12 @@ live_design! {
                 width: 20.0, height: 20.0
                 show_bg: true
                 draw_bg: {
-                    instance color: #666
+                    instance icon_color: #666
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         // Location pin head (circle with hole)
                         sdf.circle(10.0, 6.0, 4.5);
-                        sdf.fill_keep(self.color);
+                        sdf.fill_keep(self.icon_color);
                         sdf.circle(10.0, 6.0, 1.8);
                         sdf.subtract();
                         // Pin point (triangle)
@@ -318,7 +318,7 @@ live_design! {
                         sdf.line_to(10.0, 18.0);
                         sdf.line_to(14.5, 8.0);
                         sdf.close_path();
-                        sdf.fill(self.color);
+                        sdf.fill(self.icon_color);
                         return sdf.result;
                     }
                 }
@@ -368,14 +368,15 @@ live_design! {
                     width: 20.0, height: 20.0
                     show_bg: true
                     draw_bg: {
+                        instance icon_color: #999
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                             let c = self.rect_size * 0.5;
                             sdf.circle(c.x - 1.0, c.y - 1.0, 6.0);
-                            sdf.stroke(#999, 1.5);
+                            sdf.stroke(self.icon_color, 1.5);
                             sdf.move_to(c.x + 3.0, c.y + 3.0);
                             sdf.line_to(c.x + 8.0, c.y + 8.0);
-                            sdf.stroke(#999, 1.5);
+                            sdf.stroke(self.icon_color, 1.5);
                             return sdf.result;
                         }
                     }
@@ -911,10 +912,10 @@ impl YelpTabBar {
 
         // Update search tab background and colors
         self.view.view(ids!(search_tab)).apply_over(cx, live! {
-            draw_bg: { color: (search_bg) }
+            draw_bg: { bg_color: (search_bg) }
         });
         self.view.view(ids!(search_icon)).apply_over(cx, live! {
-            draw_bg: { color: (search_fg) }
+            draw_bg: { icon_color: (search_fg) }
         });
         self.view.label(ids!(search_label)).apply_over(cx, live! {
             draw_text: { color: (search_fg) }
@@ -922,10 +923,10 @@ impl YelpTabBar {
 
         // Update map tab background and colors
         self.view.view(ids!(map_tab)).apply_over(cx, live! {
-            draw_bg: { color: (map_bg) }
+            draw_bg: { bg_color: (map_bg) }
         });
         self.view.view(ids!(map_icon)).apply_over(cx, live! {
-            draw_bg: { color: (map_fg) }
+            draw_bg: { icon_color: (map_fg) }
         });
         self.view.label(ids!(map_label)).apply_over(cx, live! {
             draw_text: { color: (map_fg) }
