@@ -123,11 +123,28 @@ live_design! {
 
         cursor: Hand
 
-        // Larger square photo
+        // Photo placeholder (network images require custom implementation)
         photo = <RoundedView> {
             width: 110.0, height: 110.0
             show_bg: true
-            draw_bg: { color: #c0c0c0, border_radius: 8.0 }
+            draw_bg: {
+                color: #e8e0d8
+                instance radius: 8.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                    sdf.fill(self.color);
+                    // Food icon silhouette
+                    let c = self.rect_size * 0.5;
+                    sdf.circle(c.x, c.y - 5.0, 20.0);
+                    sdf.fill(#d0c8c0);
+                    sdf.circle(c.x - 15.0, c.y + 15.0, 8.0);
+                    sdf.fill(#d0c8c0);
+                    sdf.circle(c.x + 15.0, c.y + 15.0, 8.0);
+                    sdf.fill(#d0c8c0);
+                    return sdf.result;
+                }
+            }
         }
 
         info = <View> {
