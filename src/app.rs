@@ -244,33 +244,21 @@ live_design! {
             spacing: 4.0
             cursor: Hand
 
-            search_icon = <View> {
-                width: 24.0, height: 24.0
+            search_icon = <RoundedView> {
+                width: 22.0, height: 22.0
                 show_bg: true
                 draw_bg: {
                     instance color: (YELP_RED)
                     fn pixel(self) -> vec4 {
-                        // Normalized coordinates (0-1)
-                        let p = self.pos;
-                        let c = vec2(0.4, 0.4);  // Circle center
-                        let r = 0.25;            // Circle radius
-
-                        // Distance to circle edge (magnifying glass circle)
-                        let d_circle = abs(length(p - c) - r);
-                        let circle_ring = 1.0 - smoothstep(0.0, 0.08, d_circle);
-
-                        // Handle line from circle to bottom-right
-                        let h_start = c + vec2(0.18, 0.18);
-                        let h_end = vec2(0.85, 0.85);
-                        let h_dir = normalize(h_end - h_start);
-                        let h_len = length(h_end - h_start);
-                        let h_proj = clamp(dot(p - h_start, h_dir), 0.0, h_len);
-                        let h_closest = h_start + h_dir * h_proj;
-                        let d_handle = length(p - h_closest);
-                        let handle_line = 1.0 - smoothstep(0.0, 0.06, d_handle);
-
-                        let alpha = max(circle_ring, handle_line);
-                        return vec4(self.color.rgb, alpha);
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        // Magnifying glass circle
+                        sdf.circle(9.0, 9.0, 6.0);
+                        sdf.stroke(self.color, 2.0);
+                        // Handle
+                        sdf.move_to(13.5, 13.5);
+                        sdf.line_to(19.0, 19.0);
+                        sdf.stroke(self.color, 2.5);
+                        return sdf.result;
                     }
                 }
             }
@@ -288,34 +276,25 @@ live_design! {
             spacing: 4.0
             cursor: Hand
 
-            map_icon = <View> {
-                width: 24.0, height: 24.0
+            map_icon = <RoundedView> {
+                width: 22.0, height: 22.0
                 show_bg: true
                 draw_bg: {
                     instance color: #999
                     fn pixel(self) -> vec4 {
-                        // Normalized coordinates (0-1)
-                        let p = self.pos;
-                        let c = vec2(0.5, 0.35);  // Pin head center
-
-                        // Pin head (filled circle)
-                        let d_head = length(p - c);
-                        let head_fill = 1.0 - smoothstep(0.18, 0.22, d_head);
-
-                        // Inner dot (hole in pin)
-                        let inner_hole = smoothstep(0.06, 0.08, d_head);
-
-                        // Pin point (triangle pointing down)
-                        let pin_top = 0.5;
-                        let pin_bottom = 0.9;
-                        let pin_width = 0.12;
-                        let t = (p.y - pin_top) / (pin_bottom - pin_top);
-                        let half_w = pin_width * (1.0 - t);
-                        let in_pin = step(pin_top, p.y) * step(p.y, pin_bottom) *
-                                     step(0.5 - half_w, p.x) * step(p.x, 0.5 + half_w);
-
-                        let alpha = max(head_fill * inner_hole, in_pin);
-                        return vec4(self.color.rgb, alpha);
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        // Location pin head (circle with hole)
+                        sdf.circle(11.0, 7.0, 5.0);
+                        sdf.fill_keep(self.color);
+                        sdf.circle(11.0, 7.0, 2.0);
+                        sdf.subtract();
+                        // Pin point (triangle)
+                        sdf.move_to(6.0, 9.0);
+                        sdf.line_to(11.0, 20.0);
+                        sdf.line_to(16.0, 9.0);
+                        sdf.close_path();
+                        sdf.fill(self.color);
+                        return sdf.result;
                     }
                 }
             }
