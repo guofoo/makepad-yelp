@@ -482,7 +482,7 @@ live_design! {
                         text: "Call"
                         draw_bg: {
                             color: (YELP_RED)
-                            border_radius: 22.0
+                            border_radius: 6.0
                         }
                         draw_text: {
                             color: #fff
@@ -495,7 +495,7 @@ live_design! {
                         text: "Directions"
                         draw_bg: {
                             color: #f5f5f5
-                            border_radius: 22.0
+                            border_radius: 6.0
                         }
                         draw_text: {
                             color: #333
