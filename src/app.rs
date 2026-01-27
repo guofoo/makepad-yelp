@@ -336,17 +336,69 @@ live_design! {
         width: Fill
         height: Fill
         flow: Down
+        show_bg: true
+        draw_bg: { color: #f5f5f5 }
 
         header = <View> {
             width: Fill, height: Fit
             padding: { top: 12.0, bottom: 12.0, left: 16.0, right: 16.0 }
             show_bg: true
             draw_bg: { color: #fff }
-            <SearchBar> {}
+
+            search_bar = <RoundedView> {
+                width: Fill, height: 44.0
+                show_bg: true
+                draw_bg: {
+                    color: #f0f0f0
+                    instance radius: 8.0
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                        sdf.fill(self.color);
+                        return sdf.result;
+                    }
+                }
+                flow: Right
+                align: { y: 0.5 }
+                padding: { left: 12.0, right: 12.0 }
+                spacing: 8.0
+
+                // Search icon
+                <View> {
+                    width: 20.0, height: 20.0
+                    show_bg: true
+                    draw_bg: {
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let c = self.rect_size * 0.5;
+                            sdf.circle(c.x - 1.0, c.y - 1.0, 6.0);
+                            sdf.stroke(#999, 1.5);
+                            sdf.move_to(c.x + 3.0, c.y + 3.0);
+                            sdf.line_to(c.x + 8.0, c.y + 8.0);
+                            sdf.stroke(#999, 1.5);
+                            return sdf.result;
+                        }
+                    }
+                }
+
+                <Label> {
+                    width: Fit, height: Fit
+                    text: "Restaurants"
+                    draw_text: { text_style: { font_size: 15.0 }, color: #1a1a1a }
+                }
+                <View> { width: 1.0, height: 20.0, show_bg: true, draw_bg: { color: #ccc } }
+                <Label> {
+                    width: Fit, height: Fit
+                    text: "Current Location"
+                    draw_text: { text_style: { font_size: 15.0 }, color: #999 }
+                }
+            }
         }
 
+        // Divider
         <View> { width: Fill, height: 1.0, show_bg: true, draw_bg: { color: #e0e0e0 } }
 
+        // Business list
         list = <PortalList> {
             width: Fill, height: Fill
             business_card = <BusinessCard> {}
