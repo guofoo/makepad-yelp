@@ -1,5 +1,11 @@
 use makepad_widgets::*;
 use makepad_map::GeoMapViewWidgetExt;
+use std::sync::{LazyLock, Mutex};
+use std::collections::HashMap;
+
+// Global storage for restaurant images by business ID
+static RESTAURANT_IMAGES: LazyLock<Mutex<HashMap<String, Vec<u8>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 live_design! {
     use link::theme::*;
@@ -123,25 +129,20 @@ live_design! {
 
         cursor: Hand
 
-        // Photo placeholder (network images require custom implementation)
-        photo = <RoundedView> {
+        // Photo with network image loading
+        photo = <Image> {
             width: 110.0, height: 110.0
-            show_bg: true
+            fit: Smallest
             draw_bg: {
-                color: #e8e0d8
                 instance radius: 8.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
-                    sdf.fill(self.color);
-                    // Food icon silhouette
-                    let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.y - 5.0, 20.0);
-                    sdf.fill(#d0c8c0);
-                    sdf.circle(c.x - 15.0, c.y + 15.0, 8.0);
-                    sdf.fill(#d0c8c0);
-                    sdf.circle(c.x + 15.0, c.y + 15.0, 8.0);
-                    sdf.fill(#d0c8c0);
+                    let color = self.get_color();
+                    // Show placeholder color if no image loaded (alpha = 0)
+                    let placeholder = vec4(0.91, 0.88, 0.85, 1.0);
+                    let final_color = mix(placeholder, color, color.w);
+                    sdf.fill(vec4(final_color.xyz, 1.0));
                     return sdf.result;
                 }
             }
@@ -214,17 +215,30 @@ live_design! {
 
                 tag1 = <RoundedView> {
                     width: Fit, height: Fit
-                    padding: { top: 6.0, bottom: 6.0, left: 12.0, right: 12.0 }
+                    padding: { top: 6.0, bottom: 6.0, left: 14.0, right: 14.0 }
                     show_bg: true
                     draw_bg: {
                         color: #fff
                         instance border_color: #e0e0e0
-                        instance radius: 16.0
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.radius);
-                            sdf.fill_keep(self.color);
-                            sdf.stroke(self.border_color, 1.0);
+                            let w = self.rect_size.x;
+                            let h = self.rect_size.y;
+                            let r = h * 0.5;
+                            // Outer pill (border)
+                            sdf.circle(r, r, r);
+                            sdf.fill(self.border_color);
+                            sdf.rect(r, 0.0, w - h, h);
+                            sdf.fill(self.border_color);
+                            sdf.circle(w - r, r, r);
+                            sdf.fill(self.border_color);
+                            // Inner pill (fill)
+                            sdf.circle(r, r, r - 1.0);
+                            sdf.fill(self.color);
+                            sdf.rect(r, 1.0, w - h, h - 2.0);
+                            sdf.fill(self.color);
+                            sdf.circle(w - r, r, r - 1.0);
+                            sdf.fill(self.color);
                             return sdf.result;
                         }
                     }
@@ -265,10 +279,17 @@ live_design! {
             show_bg: true
             draw_bg: {
                 instance bg_color: (YELP_RED)
-                instance radius: 22.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                    let w = self.rect_size.x;
+                    let h = self.rect_size.y;
+                    let r = h * 0.5;
+                    // Pill/stadium shape: circle-rect-circle
+                    sdf.circle(r, h * 0.5, r);
+                    sdf.fill(self.bg_color);
+                    sdf.rect(r, 0.0, w - h, h);
+                    sdf.fill(self.bg_color);
+                    sdf.circle(w - r, h * 0.5, r);
                     sdf.fill(self.bg_color);
                     return sdf.result;
                 }
@@ -309,10 +330,17 @@ live_design! {
             show_bg: true
             draw_bg: {
                 instance bg_color: #0000
-                instance radius: 22.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                    let w = self.rect_size.x;
+                    let h = self.rect_size.y;
+                    let r = h * 0.5;
+                    // Pill/stadium shape: circle-rect-circle
+                    sdf.circle(r, h * 0.5, r);
+                    sdf.fill(self.bg_color);
+                    sdf.rect(r, 0.0, w - h, h);
+                    sdf.fill(self.bg_color);
+                    sdf.circle(w - r, h * 0.5, r);
                     sdf.fill(self.bg_color);
                     return sdf.result;
                 }
@@ -325,17 +353,19 @@ live_design! {
                     instance icon_color: #666
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        // Location pin head (circle with hole)
-                        sdf.circle(10.0, 6.0, 4.5);
-                        sdf.fill_keep(self.icon_color);
-                        sdf.circle(10.0, 6.0, 1.8);
-                        sdf.subtract();
-                        // Pin point (triangle)
-                        sdf.move_to(5.5, 8.0);
-                        sdf.line_to(10.0, 18.0);
-                        sdf.line_to(14.5, 8.0);
-                        sdf.close_path();
+                        let cx = 10.0;
+                        let cy = 8.0;
+                        // Location pin using strokes (like search icon)
+                        // Outer circle
+                        sdf.circle(cx, cy, 5.5);
+                        sdf.stroke(self.icon_color, 2.0);
+                        // Inner dot
+                        sdf.circle(cx, cy, 1.5);
                         sdf.fill(self.icon_color);
+                        // Pin stem (line down)
+                        sdf.move_to(cx, cy + 5.5);
+                        sdf.line_to(cx, 18.0);
+                        sdf.stroke(self.icon_color, 2.0);
                         return sdf.result;
                     }
                 }
@@ -436,10 +466,56 @@ live_design! {
             zoom: 13.0
         }
 
+        // Header with back button and search bar
         <View> {
             width: Fill, height: Fit
-            padding: { top: 12.0, left: 16.0, right: 16.0 }
-            <SearchBar> {}
+            flow: Down
+
+            header = <View> {
+                width: Fill, height: 56.0
+                padding: { left: 8.0, right: 16.0 }
+                show_bg: true
+                draw_bg: { color: #fff }
+                flow: Right
+                align: { y: 0.5 }
+                spacing: 8.0
+
+                back_button = <RoundedView> {
+                    width: 40.0, height: 40.0
+                    align: { x: 0.5, y: 0.5 }
+                    cursor: Hand
+                    show_bg: true
+                    draw_bg: {
+                        instance hover: 0.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let r = self.rect_size.y * 0.5;
+                            sdf.circle(r, r, r);
+                            let base = vec4(0.96, 0.96, 0.96, 1.0);
+                            let hover = vec4(0.9, 0.9, 0.9, 1.0);
+                            sdf.fill(mix(base, hover, self.hover));
+                            return sdf.result;
+                        }
+                    }
+                    // Back arrow using Label
+                    <Label> {
+                        text: "<"
+                        draw_text: {
+                            color: (YELP_RED)
+                            text_style: { font_size: 18.0 }
+                        }
+                    }
+                }
+
+                <Label> {
+                    width: Fill, height: Fit
+                    text: "Map"
+                    draw_text: {
+                        text_style: { font_size: 18.0 }
+                        color: #1a1a1a
+                    }
+                }
+            }
         }
     }
 
@@ -492,11 +568,23 @@ live_design! {
                 padding: 16.0
                 spacing: 16.0
 
-                // Hero image placeholder
-                hero_image = <RoundedView> {
+                // Hero image with network loading
+                hero_image = <Image> {
                     width: Fill, height: 200.0
-                    show_bg: true
-                    draw_bg: { color: #e0e0e0, border_radius: 8.0 }
+                    fit: Smallest
+                    draw_bg: {
+                        instance radius: 8.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                            let color = self.get_color();
+                            // Show placeholder color if no image loaded
+                            let placeholder = vec4(0.878, 0.878, 0.878, 1.0);
+                            let final_color = mix(placeholder, color, color.w);
+                            sdf.fill(vec4(final_color.xyz, 1.0));
+                            return sdf.result;
+                        }
+                    }
                 }
 
                 // Business info section
@@ -545,35 +633,77 @@ live_design! {
                     }
                 }
 
-                // Action buttons
+                // Action buttons with pill shape and hover states (using RoundedView for full control)
                 action_buttons = <View> {
                     width: Fill, height: Fit
                     flow: Right
                     spacing: 12.0
 
-                    call_button = <Button> {
+                    call_button = <RoundedView> {
                         width: Fill, height: 44.0
-                        text: "Call"
+                        align: { x: 0.5, y: 0.5 }
+                        cursor: Hand
+                        show_bg: true
                         draw_bg: {
-                            color: (YELP_RED)
-                            border_radius: 6.0
+                            instance hover: 0.0
+                            instance pressed: 0.0
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                let w = self.rect_size.x;
+                                let h = self.rect_size.y;
+                                let r = h * 0.5;
+                                // Yelp red with hover/pressed darkening
+                                let base_color = vec4(0.827, 0.137, 0.137, 1.0);
+                                let hover_color = vec4(0.70, 0.10, 0.10, 1.0);
+                                let pressed_color = vec4(0.55, 0.08, 0.08, 1.0);
+                                let color = mix(mix(base_color, hover_color, self.hover), pressed_color, self.pressed);
+                                // Pill shape
+                                sdf.circle(r, h * 0.5, r);
+                                sdf.fill(color);
+                                sdf.rect(r, 0.0, w - h, h);
+                                sdf.fill(color);
+                                sdf.circle(w - r, h * 0.5, r);
+                                sdf.fill(color);
+                                return sdf.result;
+                            }
                         }
-                        draw_text: {
-                            color: #fff
-                            text_style: { font_size: 14.0 }
+                        <Label> {
+                            text: "Call"
+                            draw_text: { color: #fff, text_style: { font_size: 14.0 } }
                         }
                     }
 
-                    directions_button = <Button> {
+                    directions_button = <RoundedView> {
                         width: Fill, height: 44.0
-                        text: "Directions"
+                        align: { x: 0.5, y: 0.5 }
+                        cursor: Hand
+                        show_bg: true
                         draw_bg: {
-                            color: #f5f5f5
-                            border_radius: 6.0
+                            instance hover: 0.0
+                            instance pressed: 0.0
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                let w = self.rect_size.x;
+                                let h = self.rect_size.y;
+                                let r = h * 0.5;
+                                // Light gray with hover/pressed darkening
+                                let base_color = vec4(0.96, 0.96, 0.96, 1.0);
+                                let hover_color = vec4(0.88, 0.88, 0.88, 1.0);
+                                let pressed_color = vec4(0.75, 0.75, 0.75, 1.0);
+                                let color = mix(mix(base_color, hover_color, self.hover), pressed_color, self.pressed);
+                                // Pill shape
+                                sdf.circle(r, h * 0.5, r);
+                                sdf.fill(color);
+                                sdf.rect(r, 0.0, w - h, h);
+                                sdf.fill(color);
+                                sdf.circle(w - r, h * 0.5, r);
+                                sdf.fill(color);
+                                return sdf.result;
+                            }
                         }
-                        draw_text: {
-                            color: #333
-                            text_style: { font_size: 14.0 }
+                        <Label> {
+                            text: "Directions"
+                            draw_text: { color: #333, text_style: { font_size: 14.0 } }
                         }
                     }
                 }
@@ -793,6 +923,7 @@ pub struct BusinessCard {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust] business: Option<Business>,
+    #[rust] loaded_image_id: Option<String>, // Track which business's image is loaded
 }
 
 impl Widget for BusinessCard {
@@ -846,6 +977,21 @@ impl Widget for BusinessCard {
 
             // Set star rating
             self.view.star_rating(ids!(stars)).set_rating(cx, business.rating);
+
+            // Load restaurant image from network if available (check if we need to reload for different business)
+            let needs_load = self.loaded_image_id.as_ref() != Some(&business.id);
+            if needs_load {
+                if let Ok(images) = RESTAURANT_IMAGES.lock() {
+                    if let Some(image_data) = images.get(&business.id) {
+                        let photo = self.view.image(ids!(photo));
+                        // Try loading as JPEG first, then PNG
+                        if photo.load_jpg_from_data(cx, image_data).is_ok()
+                            || photo.load_png_from_data(cx, image_data).is_ok() {
+                            self.loaded_image_id = Some(business.id.clone());
+                        }
+                    }
+                }
+            }
         }
         self.view.draw_walk(cx, scope, walk)
     }
@@ -960,6 +1106,13 @@ impl YelpTabBarRef {
             inner.redraw(cx);
         }
     }
+
+    pub fn set_active_tab(&self, cx: &mut Cx, tab: Tab) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.current_tab = tab;
+            inner.update_tab_colors(cx);
+        }
+    }
 }
 
 #[derive(Clone, Debug, DefaultNone)]
@@ -1024,6 +1177,32 @@ impl Widget for MapScreen {
         if !self.visible { return; }
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
 
+        // Handle back button
+        let back_btn = self.view.view(ids!(back_button));
+        let back_area = back_btn.area();
+        match event.hits(cx, back_area) {
+            Hit::FingerDown(_) => {
+                back_btn.apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
+                back_btn.redraw(cx);
+            }
+            Hit::FingerUp(fe) => {
+                back_btn.apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
+                back_btn.redraw(cx);
+                if fe.is_over {
+                    cx.widget_action(self.widget_uid(), &scope.path, MapScreenAction::Back);
+                }
+            }
+            Hit::FingerHoverIn(_) => {
+                back_btn.apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
+                back_btn.redraw(cx);
+            }
+            Hit::FingerHoverOut(_) => {
+                back_btn.apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
+                back_btn.redraw(cx);
+            }
+            _ => {}
+        }
+
         // Handle marker taps
         let map = self.view.geo_map_view(ids!(map));
         if let Some(marker_id) = map.marker_tapped(&actions) {
@@ -1078,11 +1257,18 @@ impl MapScreenRef {
     }
 }
 
+#[derive(Clone, Debug, DefaultNone)]
+pub enum MapScreenAction {
+    None,
+    Back,
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct BusinessDetailScreen {
     #[deref] view: View,
     #[live] visible: bool,
     #[rust] business: Option<Business>,
+    #[rust] image_loaded: bool,
 }
 
 impl Widget for BusinessDetailScreen {
@@ -1096,6 +1282,60 @@ impl Widget for BusinessDetailScreen {
                 &scope.path,
                 DetailScreenAction::Back,
             );
+        }
+
+        // Handle call button
+        let call_btn = self.view.view(ids!(call_button));
+        let call_area = call_btn.area();
+        match event.hits(cx, call_area) {
+            Hit::FingerDown(_) => {
+                call_btn.apply_over(cx, live!{ draw_bg: { pressed: 1.0 } });
+                call_btn.redraw(cx);
+            }
+            Hit::FingerUp(fe) => {
+                call_btn.apply_over(cx, live!{ draw_bg: { pressed: 0.0 } });
+                call_btn.redraw(cx);
+                if fe.is_over {
+                    cx.widget_action(self.widget_uid(), &scope.path, DetailScreenAction::Call);
+                }
+            }
+            Hit::FingerHoverIn(_) => {
+                call_btn.apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
+                call_btn.redraw(cx);
+            }
+            Hit::FingerHoverOut(_) => {
+                call_btn.apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
+                call_btn.redraw(cx);
+            }
+            _ => {}
+        }
+
+        // Handle directions button
+        let dir_btn = self.view.view(ids!(directions_button));
+        let dir_area = dir_btn.area();
+        match event.hits(cx, dir_area) {
+            Hit::FingerDown(_) => {
+                dir_btn.apply_over(cx, live!{ draw_bg: { pressed: 1.0 } });
+                dir_btn.redraw(cx);
+            }
+            Hit::FingerUp(fe) => {
+                // Keep pressed state visible briefly before action
+                if fe.is_over {
+                    cx.widget_action(self.widget_uid(), &scope.path, DetailScreenAction::Directions);
+                } else {
+                    dir_btn.apply_over(cx, live!{ draw_bg: { pressed: 0.0 } });
+                    dir_btn.redraw(cx);
+                }
+            }
+            Hit::FingerHoverIn(_) => {
+                dir_btn.apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
+                dir_btn.redraw(cx);
+            }
+            Hit::FingerHoverOut(_) => {
+                dir_btn.apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
+                dir_btn.redraw(cx);
+            }
+            _ => {}
         }
     }
 
@@ -1114,6 +1354,19 @@ impl Widget for BusinessDetailScreen {
 
             // Set star rating
             self.view.star_rating(ids!(stars)).set_rating(cx, business.rating);
+
+            // Load hero image from network if available
+            if !self.image_loaded {
+                if let Ok(images) = RESTAURANT_IMAGES.lock() {
+                    if let Some(image_data) = images.get(&business.id) {
+                        let hero = self.view.image(ids!(hero_image));
+                        if hero.load_jpg_from_data(cx, image_data).is_ok()
+                            || hero.load_png_from_data(cx, image_data).is_ok() {
+                            self.image_loaded = true;
+                        }
+                    }
+                }
+            }
         }
 
         self.view.draw_walk(cx, scope, walk)
@@ -1123,6 +1376,7 @@ impl Widget for BusinessDetailScreen {
 impl BusinessDetailScreen {
     pub fn set_business(&mut self, business: &Business) {
         self.business = Some(business.clone());
+        self.image_loaded = false; // Reset so image loads for new business
     }
 }
 
@@ -1146,6 +1400,8 @@ impl BusinessDetailScreenRef {
 pub enum DetailScreenAction {
     None,
     Back,
+    Call,
+    Directions,
 }
 
 // =====================
@@ -1174,6 +1430,47 @@ impl LiveRegister for App {
 }
 
 impl MatchEvent for App {
+    fn handle_startup(&mut self, cx: &mut Cx) {
+        // Request food images for each business using picsum with seed for consistent different images
+        let businesses = mock_businesses();
+        for business in &businesses {
+            let url = format!("https://picsum.photos/seed/{}/320/240", business.id);
+            let request = HttpRequest::new(url, HttpMethod::GET);
+            // Use business ID as the request ID
+            cx.http_request(LiveId::from_str(&business.id), request);
+        }
+        log!("Requesting {} restaurant images...", businesses.len());
+    }
+
+    fn handle_network_responses(&mut self, cx: &mut Cx, responses: &NetworkResponsesEvent) {
+        let businesses = mock_businesses();
+        for event in responses {
+            // Check if this response is for one of our business images
+            for business in &businesses {
+                if event.request_id == LiveId::from_str(&business.id) {
+                    match &event.response {
+                        NetworkResponse::HttpResponse(response) => {
+                            if let Some(body) = &response.body {
+                                log!("Received image for {}: {} bytes", business.name, body.len());
+                                // Store in global map by business ID
+                                if let Ok(mut images) = RESTAURANT_IMAGES.lock() {
+                                    images.insert(business.id.clone(), body.clone());
+                                }
+                                // Redraw to trigger image loading in cards
+                                self.ui.redraw(cx);
+                            }
+                        }
+                        NetworkResponse::HttpRequestError(err) => {
+                            log!("Image request error for {}: {:?}", business.name, err);
+                        }
+                        _ => {}
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions.iter() {
             // Handle tab changes (widget action pattern)
@@ -1194,6 +1491,27 @@ impl MatchEvent for App {
             if let DetailScreenAction::Back = action.as_widget_action().cast() {
                 log!("App received Back action");
                 self.hide_detail(cx);
+                continue;
+            }
+
+            // Handle directions button - switch to map
+            if let DetailScreenAction::Directions = action.as_widget_action().cast() {
+                log!("App received Directions action");
+                self.hide_detail(cx);
+                self.switch_tab(cx, &Tab::Map);
+                continue;
+            }
+
+            // Handle call button (placeholder - just log for now)
+            if let DetailScreenAction::Call = action.as_widget_action().cast() {
+                log!("App received Call action - would open phone dialer");
+                continue;
+            }
+
+            // Handle back from map screen - switch to search
+            if let MapScreenAction::Back = action.as_widget_action().cast() {
+                log!("App received Map Back action");
+                self.switch_tab(cx, &Tab::Search);
                 continue;
             }
         }
@@ -1224,6 +1542,8 @@ impl App {
         self.current_tab = *tab;
         self.ui.search_screen(ids!(search_screen)).set_visible(cx, *tab == Tab::Search);
         self.ui.map_screen(ids!(map_screen)).set_visible(cx, *tab == Tab::Map);
+        // Update tab bar highlighting
+        self.ui.yelp_tab_bar(ids!(tab_bar)).set_active_tab(cx, *tab);
         self.ui.redraw(cx);
     }
 
